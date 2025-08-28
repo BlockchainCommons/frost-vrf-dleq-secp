@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 use frost_secp256k1_tr as frost;
 use k256::Scalar;
 use sha2::{Digest, Sha256};
+use nistrs::{prelude::*, BitsData, TEST_THRESHOLD};
 
 use frost_vrf_dleq_secp::{
     hash_to_curve, key_from_gamma, normalize_secret_to_pubkey, pm_message, ratchet_state,
@@ -72,6 +73,47 @@ fn build_chain_with_quorum(
     (keys, state)
 }
 
+/// Generate `steps` full 32-byte keys using the FROST-controlled VRF ratchet.
+fn generate_keys_for_randomness(
+    key_packages: &BTreeMap<frost::Identifier, frost::keys::KeyPackage>,
+    pubkeys: &frost::keys::PublicKeyPackage,
+    steps: usize,
+    chain_id: &[u8],
+) -> Vec<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let x_point = pubkeys.verifying_key().to_element();
+    // reconstruct x once from a valid quorum and normalize to Taproot-even-Y public key
+    let quorum: Vec<_> = vec![1u16, 3, 5]
+        .into_iter()
+        .map(|i| frost::Identifier::try_from(i).unwrap())
+        .collect();
+    let recon_input: Vec<_> = quorum.iter().map(|id| key_packages[id].clone()).collect();
+    let signing_key = frost::keys::reconstruct(&recon_input).expect("reconstruct x");
+    let x = frost_vrf_dleq_secp::normalize_secret_to_pubkey(signing_key.to_scalar(), &x_point);
+
+    // S0 := H("PM-Genesis")
+    let mut s = {
+        let mut h = Sha256::new();
+        h.update(b"PM-Genesis");
+        let out = h.finalize();
+        let mut a = [0u8; 32];
+        a.copy_from_slice(&out);
+        a
+    };
+
+    let mut keys = Vec::with_capacity(steps);
+    for j in 1..=steps {
+        let msg = frost_vrf_dleq_secp::pm_message(&x_point, chain_id, &s, j as u64);
+        let h_point = frost_vrf_dleq_secp::hash_to_curve(&msg);
+        // Γ = x·H(m)
+        let gamma = h_point * x;
+        let key_j = frost_vrf_dleq_secp::key_from_gamma(&gamma);
+        s = frost_vrf_dleq_secp::ratchet_state(&s, &key_j);
+        keys.push(key_j);
+    }
+    keys
+}
+
 #[test]
 fn pm_chain_deterministic_and_roster_invariant() {
     let n = 5;
@@ -100,40 +142,71 @@ fn pm_chain_deterministic_and_roster_invariant() {
 }
 
 #[test]
-fn pm_chain_basic_randomness_checks() {
-    let n = 5;
-    let t = 3;
-    let (key_packages, pubkeys) = dealer_keygen(n, t);
-    let chain_id = b"randomness-check";
+fn pm_chain_nist_randomness_suite() {
+    // Build a long sequence: 4,096 keys × 32 bytes = 1,048,576 bits.
+    let (key_packages, pubkeys) = dealer_keygen(5, 3);
+    let chain_id = b"nist-suite";
+    let steps = 8192usize;
+    let keys = generate_keys_for_randomness(&key_packages, &pubkeys, steps, chain_id);
 
-    // One quorum is enough to test distribution
-    let quorum: Vec<_> = vec![1u16,3,5].into_iter().map(|i| frost::Identifier::try_from(i).unwrap()).collect();
+    // Concatenate to bytes for NIST tests
+    let mut bytes = Vec::with_capacity(steps * 32);
+    for k in &keys { bytes.extend_from_slice(k); }
+    let data = BitsData::from_binary(bytes);
 
-    // Generate 512 keys (enough to get a half-million bits for monobit test)
-    let steps = 512usize;
-    let (keys, _state) = build_chain_with_quorum(&key_packages, &pubkeys, chain_id, &quorum, steps);
+    // Helper to assert pass + p-value threshold
+    let chk = |name: &str, r: TestResultT| {
+        assert!(r.0, "NIST {} failed (p = {})", name, r.1);
+        assert!(r.1 >= TEST_THRESHOLD, "NIST {}: p-value {} < {}", name, r.1, TEST_THRESHOLD);
+    };
 
-    // 1) Monobit test across all key bits (~512 * 256 = 131,072 bytes = 1,048,576 bits)
-    let mut ones: u64 = 0;
-    let mut total_bits: u64 = 0;
-    for k in &keys {
-        for b in k {
-            ones += b.count_ones() as u64;
-            total_bits += 8;
+    // Core tests (no extra parameters)
+    chk("frequency", frequency_test(&data));                     // SP 800‑22 §2.1 :contentReference[oaicite:1]{index=1}
+    chk("runs", runs_test(&data));                               // §2.3 :contentReference[oaicite:2]{index=2}
+    chk("fft", fft_test(&data));                                 // §2.6 :contentReference[oaicite:3]{index=3}
+    chk("universal", universal_test(&data));                     // §2.8 Maurer :contentReference[oaicite:4]{index=4}
+
+    // Parameterized tests (use standard, sane defaults for long streams)
+    chk("block_frequency(m=128)", block_frequency_test(&data, 128).expect("block_frequency preconditions"));  // §2.2 :contentReference[oaicite:5]{index=5}
+    chk("longest_run_of_ones", longest_run_of_ones_test(&data).expect("longest_run preconditions"));         // §2.4 (len > 128) :contentReference[oaicite:6]{index=6}
+    chk("rank", rank_test(&data).expect("rank preconditions"));                                              // §2.5 (len > 38912) :contentReference[oaicite:7]{index=7}
+    let cu = cumulative_sums_test(&data);                                                                    // §2.7 (forward & reverse) :contentReference[oaicite:8]{index=8}
+    chk("cumulative_sums-forward", cu[0]);
+    chk("cumulative_sums-reverse", cu[1]);
+    chk("approximate_entropy(m=10)", approximate_entropy_test(&data, 10));                                   // §2.12 :contentReference[oaicite:9]{index=9}
+    let se = serial_test(&data, 16);                                                                          // §2.13 (returns 2 p-values) :contentReference[oaicite:10]{index=10}
+    chk("serial(m=16)[0]", se[0]);
+    chk("serial(m=16)[1]", se[1]);
+    chk("overlapping_template(m=9)", overlapping_template_test(&data, 9));                                    // §2.8 (overlapping) :contentReference[oaicite:11]{index=11}
+    // §2.7 Non-overlapping templates return a vector of subtests (many p-values).
+    // NIST methodology evaluates pass **rates** across subtests. We allow up to 2% fails.
+    let nonov = non_overlapping_template_test(&data, 9)
+        .expect("non-overlapping preconditions");
+    let mut fail_indices = Vec::new();
+    for (i, tr) in nonov.iter().enumerate() {
+        let pass = tr.0 && tr.1 >= TEST_THRESHOLD;
+        if !pass {
+            fail_indices.push((i, tr.1));
         }
     }
-    let frac = (ones as f64) / (total_bits as f64);
-    // Accept a very loose window around 50% (±1%); expected stdev is ~0.07% at this N.
+    let total = nonov.len();
+    let allowed = ((total as f64) * 0.02).ceil() as usize; // <= 2% failures permitted
     assert!(
-        (0.49..=0.51).contains(&frac),
-        "monobit frequency should be ~50% ones, got {:.4}%",
-        100.0 * frac
+        fail_indices.len() <= allowed,
+        "NIST non_overlapping_template(m=9): {} of {} subtests failed (allow ≤ {}); examples: {:?}",
+        fail_indices.len(),
+        total,
+        allowed,
+        &fail_indices[..fail_indices.len().min(5)]
     );
 
-    // 2) Collision check: keys should all be unique at this small N
-    let mut set = HashSet::with_capacity(steps);
-    for k in &keys {
-        set.insert(k);
+    // These two require enough zero-crossing cycles; if preconditions fail, skip (informative).
+    match random_excursions_test(&data) {                                                                     // §2.14 :contentReference[oaicite:13]{index=13}
+        Ok(arr) => for (i, tr) in arr.into_iter().enumerate() { chk(&format!("random_excursions[{}]", i), tr); },
+        Err(e) => eprintln!("random_excursions skipped: {}", e),
     }
-    assert_eq!(set.len(), steps, "no duplicate keys expected at this size");
+    match random_excursions_variant_test(&data) {                                                             // §2.15 :contentReference[oaicite:14]{index=14}
+        Ok(arr) => for (i, tr) in arr.into_iter().enumerate() { chk(&format!("random_excursions_variant[{}]", i), tr); },
+        Err(e) => eprintln!("random_excursions_variant skipped: {}", e),
+    }
 }
