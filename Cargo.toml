@@ -1,0 +1,25 @@
+[package]
+name = "frost-vrf-dleq-secp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "VRF + DLEQ demonstration on top of frost-secp256k1-tr (Taproot Schnorr)"
+
+[dependencies]
+frost-secp256k1-tr = "2.2.0"
+k256 = { version = "0.13.4", features = ["arithmetic", "hash2curve"] }
+sha2 = "0.10"
+rand = "0.8"
+rand_core = "0.6"
+thiserror = "1"
+
+[dev-dependencies]
+hex = "0.4"
+
+[lib]
+name = "frost_vrf_dleq_secp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "demo"
+path = "src/main.rs"
