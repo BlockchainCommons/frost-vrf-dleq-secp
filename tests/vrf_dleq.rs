@@ -19,7 +19,7 @@ fn vrf_and_dleq_with_group_secret_x() {
         max,
         min,
         frost::keys::IdentifierList::Default,
-        &mut rng,
+        rng,
     )
     .expect("keygen ok");
 
