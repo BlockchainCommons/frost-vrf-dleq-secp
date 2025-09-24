@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
-use frost_secp256k1_tr as frost;
 use frost::round1;
-
+use frost_secp256k1_tr as frost;
 use frost_vrf_dleq_secp::{
     hash_to_curve, point_bytes, vrf_gamma_and_proof_for_x, vrf_verify_for_x,
 };
@@ -24,20 +23,26 @@ fn vrf_and_dleq_with_group_secret_x() {
     .expect("keygen ok");
 
     // Materialize KeyPackages (what participants actually store)
-    let mut key_packages: BTreeMap<frost::Identifier, frost::keys::KeyPackage> = BTreeMap::new();
+    let mut key_packages: BTreeMap<frost::Identifier, frost::keys::KeyPackage> =
+        BTreeMap::new();
     for (id, secret_share) in shares {
-        let kp = frost::keys::KeyPackage::try_from(secret_share).expect("share->KeyPackage");
+        let kp = frost::keys::KeyPackage::try_from(secret_share)
+            .expect("share->KeyPackage");
         key_packages.insert(id, kp);
     }
 
     // Choose exactly `min` signers: 1,2,3 (not strictly needed for this test,
     // but we mirror a real signing roster).
-    let chosen: Vec<frost::Identifier> = (1..=min).map(|i| i.try_into().unwrap()).collect();
+    let chosen: Vec<frost::Identifier> =
+        (1..=min).map(|i| i.try_into().unwrap()).collect();
 
-    // ----- Round 1: each chosen signer commits (not used directly here, but included
-    // to demonstrate realistic flow in a FROST-controlled system) -----
-    let mut _nonces: BTreeMap<frost::Identifier, round1::SigningNonces> = BTreeMap::new();
-    let mut _comms: BTreeMap<frost::Identifier, round1::SigningCommitments> = BTreeMap::new();
+    // ----- Round 1: each chosen signer commits (not used directly here, but
+    // included to demonstrate realistic flow in a FROST-controlled system)
+    // -----
+    let mut _nonces: BTreeMap<frost::Identifier, round1::SigningNonces> =
+        BTreeMap::new();
+    let mut _comms: BTreeMap<frost::Identifier, round1::SigningCommitments> =
+        BTreeMap::new();
     for id in &chosen {
         let kp = &key_packages[id];
         let (sn, sc) = frost::round1::commit(kp.signing_share(), &mut rng);
@@ -52,7 +57,8 @@ fn vrf_and_dleq_with_group_secret_x() {
     // TEST-ONLY: reconstruct the group secret key x from exactly `min` shares
     let recon_input: Vec<frost::keys::KeyPackage> =
         chosen.iter().map(|i| key_packages[i].clone()).collect();
-    let signing_key = frost::keys::reconstruct(&recon_input).expect("reconstruct x");
+    let signing_key =
+        frost::keys::reconstruct(&recon_input).expect("reconstruct x");
     // Extract scalar
     let mut x: Scalar = signing_key.to_scalar();
 
@@ -78,7 +84,8 @@ fn vrf_and_dleq_with_group_secret_x() {
     let (gamma, proof) = vrf_gamma_and_proof_for_x(&x, &x_point, &h_point);
 
     // Public verification
-    vrf_verify_for_x(&x_point, &h_point, &gamma, &proof).expect("DLEQ must verify");
+    vrf_verify_for_x(&x_point, &h_point, &gamma, &proof)
+        .expect("DLEQ must verify");
 
     // Sanity assertions
     assert_ne!(x_point, ProjectivePoint::IDENTITY);

@@ -1,19 +1,19 @@
 use std::collections::BTreeMap;
 
 use chrono::TimeZone;
-use frost_secp256k1_tr as frost;
-use k256::ProjectivePoint;
-use sha2::{Digest, Sha256};
-use frost_secp256k1_tr::Group;
 use dcbor::Date;
-use provenance_mark as pm;
-
+use frost_secp256k1_tr as frost;
+use frost_secp256k1_tr::Group;
 use frost_vrf_dleq_secp::{
-    hash_to_curve, key_from_gamma, normalize_secret_to_pubkey, pm_message, ratchet_state,
-    vrf_gamma_and_proof_for_x, vrf_verify_for_x, DleqProof,
+    hash_to_curve, key_from_gamma, normalize_secret_to_pubkey, pm_message,
+    ratchet_state, vrf_gamma_and_proof_for_x, vrf_verify_for_x, DleqProof,
 };
+use k256::ProjectivePoint;
+use provenance_mark as pm;
+use sha2::{Digest, Sha256};
 
-/// Wrapper that pairs a ProvenanceMark with the VRF output and proof for its `next_key`.
+/// Wrapper that pairs a ProvenanceMark with the VRF output and proof for its
+/// `next_key`.
 #[derive(Clone, Debug)]
 struct EnhancedMark {
     mark: pm::ProvenanceMark,
@@ -21,7 +21,10 @@ struct EnhancedMark {
     proof_next: DleqProof,      // DLEQ that log_G(X) = log_H(Γ_{j+1})
 }
 
-fn dealer_keygen(n: u16, t: u16) -> (
+fn dealer_keygen(
+    n: u16,
+    t: u16,
+) -> (
     BTreeMap<frost::Identifier, frost::keys::KeyPackage>,
     frost::keys::PublicKeyPackage,
 ) {
@@ -45,8 +48,15 @@ fn dealer_keygen(n: u16, t: u16) -> (
 
 /// Deterministic, roster‑invariant chain id of the exact link length.
 /// CHAIN_ID = H("PM-CHAIN-ID" || X || label)[0..link_length]
-fn make_chain_id(res: pm::ProvenanceMarkResolution, x_point: &ProjectivePoint, label: &str) -> Vec<u8> {
-    let x_bytes = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(x_point)
+fn make_chain_id(
+    res: pm::ProvenanceMarkResolution,
+    x_point: &ProjectivePoint,
+    label: &str,
+) -> Vec<u8> {
+    let x_bytes =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(
+            x_point,
+        )
         .expect("X encodable");
     let mut h = Sha256::new();
     h.update(b"PM-CHAIN-ID");
@@ -68,8 +78,8 @@ fn expand_key_to_32(key_trunc: &[u8]) -> [u8; 32] {
     a
 }
 
-/// Build a chain of `steps` marks at a given resolution, producing EnhancedMarks.
-/// Public ratchet:
+/// Build a chain of `steps` marks at a given resolution, producing
+/// EnhancedMarks. Public ratchet:
 ///   S_0 = H("PM-Genesis")
 ///   For j >= 0:
 ///     msg_{j+1} = pm_message(X, chain_id, S_j, j+1)
@@ -90,8 +100,10 @@ fn build_chain_with_proof(
     let quorum: Vec<_> = (1u16..=t)
         .map(|i| frost::Identifier::try_from(i).unwrap())
         .collect();
-    let recon_input: Vec<_> = quorum.iter().map(|id| key_packages[id].clone()).collect();
-    let signing_key = frost::keys::reconstruct(&recon_input).expect("reconstruct x");
+    let recon_input: Vec<_> =
+        quorum.iter().map(|id| key_packages[id].clone()).collect();
+    let signing_key =
+        frost::keys::reconstruct(&recon_input).expect("reconstruct x");
 
     // Normalize x to the (Taproot even‑Y) X
     let x = normalize_secret_to_pubkey(signing_key.to_scalar(), &x_point);
@@ -121,14 +133,16 @@ fn build_chain_with_proof(
     let mut out: Vec<EnhancedMark> = Vec::with_capacity(steps);
 
     // Build marks j = 0 .. steps-1
-    // ‣ mark_0 is genesis: key_0 == chain_id; next_key_0 == key_1 from VRF(msg_1).
+    // ‣ mark_0 is genesis: key_0 == chain_id; next_key_0 == key_1 from
+    // VRF(msg_1).
     let mut current_key_trunc = chain_id.clone(); // key_j, truncated to link length
 
     for j in 0..steps {
         // Compute next_key_{j} (i.e., key_{j+1}) from VRF over msg_{j+1}
         let msg_next = pm_message(&x_point, &chain_id, &s, (j as u64) + 1);
         let h_point = hash_to_curve(&msg_next);
-        let (gamma_next, proof_next) = vrf_gamma_and_proof_for_x(&x, &x_point, &h_point);
+        let (gamma_next, proof_next) =
+            vrf_gamma_and_proof_for_x(&x, &x_point, &h_point);
 
         // key_{j+1}, truncated to the resolution link length
         let full_k_next = key_from_gamma(&gamma_next);
@@ -142,7 +156,8 @@ fn build_chain_with_proof(
             chain_id.clone(),
             j as u32,
             date.clone(),
-            Option::<dcbor::CBOR>::None, // keep info application-defined for now
+            Option::<dcbor::CBOR>::None, /* keep info application-defined
+                                          * for now */
         )
         .expect("construct mark");
 
@@ -155,11 +170,7 @@ fn build_chain_with_proof(
             arr
         };
 
-        out.push(EnhancedMark {
-            mark: mark_j,
-            gamma_next_bytes,
-            proof_next,
-        });
+        out.push(EnhancedMark { mark: mark_j, gamma_next_bytes, proof_next });
 
         // Ratchet S_{j+1} publicly from truncated next_key
         let key32 = expand_key_to_32(&k_next_trunc);
@@ -173,20 +184,21 @@ fn build_chain_with_proof(
 }
 
 /// End-to-end chain test at the given resolution (100 marks)
-fn run_resolution(
-    res: pm::ProvenanceMarkResolution,
-    label: &str,
-) {
+fn run_resolution(res: pm::ProvenanceMarkResolution, label: &str) {
     let n = 5u16;
     let t = 3u16;
     let (key_packages, pubkeys) = dealer_keygen(n, t);
 
     let steps = 100usize;
-    let (enhanced, chain_id) = build_chain_with_proof(&key_packages, &pubkeys, res, label, steps);
+    let (enhanced, chain_id) =
+        build_chain_with_proof(&key_packages, &pubkeys, res, label, steps);
 
     // 1) Basic PM invariants: genesis + sequence validity
     assert_eq!(enhanced.len(), steps);
-    assert!(enhanced[0].mark.is_genesis(), "seq=0 must be genesis (key==chain_id)");
+    assert!(
+        enhanced[0].mark.is_genesis(),
+        "seq=0 must be genesis (key==chain_id)"
+    );
     // check key bytes length equals link length for this resolution
     assert_eq!(enhanced[0].mark.chain_id().len(), res.link_length());
     assert_eq!(enhanced[0].mark.key().len(), res.link_length());
@@ -194,13 +206,16 @@ fn run_resolution(
 
     // `precedes` must hold pairwise, and the entire chain must be valid
     for w in enhanced.windows(2) {
-        assert!(w[0].mark.precedes(&w[1].mark), "pairwise precedes must hold");
+        assert!(
+            w[0].mark.precedes(&w[1].mark),
+            "pairwise precedes must hold"
+        );
     }
     let marks_only: Vec<_> = enhanced.iter().map(|e| e.mark.clone()).collect();
     assert!(pm::ProvenanceMark::is_sequence_valid(&marks_only));
 
-    // 2) Verify every DLEQ proof for the nextKey
-    //    And check that computed key_{j+1} matches mark_{j+1}.key()
+    // 2) Verify every DLEQ proof for the nextKey And check that computed
+    //    key_{j+1} matches mark_{j+1}.key()
     let x_point = pubkeys.verifying_key().to_element();
     let mut s = {
         let mut h = Sha256::new();
@@ -217,12 +232,14 @@ fn run_resolution(
         let h_point = hash_to_curve(&msg_next);
 
         // Decode Γ_{j+1} and verify DLEQ
-        let gamma_next = frost_vrf_dleq_secp::point_from_bytes(&pair.gamma_next_bytes)
-            .expect("decode Γ");
+        let gamma_next =
+            frost_vrf_dleq_secp::point_from_bytes(&pair.gamma_next_bytes)
+                .expect("decode Γ");
         vrf_verify_for_x(&x_point, &h_point, &gamma_next, &pair.proof_next)
             .expect("DLEQ verify");
 
-        // key_{j+1} from Γ_{j+1}, truncated to resolution; check against next mark's key if it exists
+        // key_{j+1} from Γ_{j+1}, truncated to resolution; check against next
+        // mark's key if it exists
         if j + 1 < enhanced.len() {
             let k_next_full = key_from_gamma(&gamma_next);
             let k_next_trunc = &k_next_full[..res.link_length()];
@@ -246,7 +263,8 @@ fn run_resolution(
 #[test]
 fn pm_integration_all_resolutions_100_marks() {
     // Covers all four PM resolutions as defined by the crate. 100 marks each.
-    // Low, Medium, Quartile, High ⇒ link lengths: 4, 8, 16, 32 bytes. :contentReference[oaicite:3]{index=3}
+    // Low, Medium, Quartile, High ⇒ link lengths: 4, 8, 16, 32 bytes.
+    // :contentReference[oaicite:3]{index=3}
     run_resolution(pm::ProvenanceMarkResolution::Low, "low");
     run_resolution(pm::ProvenanceMarkResolution::Medium, "medium");
     run_resolution(pm::ProvenanceMarkResolution::Quartile, "quartile");

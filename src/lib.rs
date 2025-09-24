@@ -5,14 +5,14 @@
 //! 2) Compute a VRF output Γ = x·H(m)
 //! 3) Prove a DLEQ:  log_G(X) = log_H(Γ)  using a Schnorr-style NIZK
 //!
-//! This is the construction you’ll use for PM: only the FROST group (who hold x)
-//! can produce Γ and the proof; verifiers check the proof publicly against X and H(m).
+//! This is the construction you’ll use for PM: only the FROST group (who hold
+//! x) can produce Γ and the proof; verifiers check the proof publicly against X
+//! and H(m).
 
 use core::ops::Add;
 
 use frost_secp256k1_tr as frost;
 use frost_secp256k1_tr::Group; // for Group::serialize
-
 use k256::{
     elliptic_curve::{
         hash2curve::{ExpandMsgXmd, GroupDigest},
@@ -51,7 +51,8 @@ pub struct DleqProof {
     pub z: Scalar,
 }
 
-/// Return compressed SEC1 (33 bytes) for any projective point (must not be IDENTITY).
+/// Return compressed SEC1 (33 bytes) for any projective point (must not be
+/// IDENTITY).
 pub fn point_bytes(p: &ProjectivePoint) -> Result<[u8; 33], VrfError> {
     let ap: AffinePoint = (*p).to_affine();
     let enc = ap.to_encoded_point(true);
@@ -75,10 +76,14 @@ pub fn point_from_bytes(bytes: &[u8; 33]) -> Result<ProjectivePoint, VrfError> {
     Ok(ProjectivePoint::from(aff))
 }
 
-/// Hash-to-curve on secp256k1 (random oracle / SSWU via RustCrypto’s generic impl).
+/// Hash-to-curve on secp256k1 (random oracle / SSWU via RustCrypto’s generic
+/// impl).
 pub fn hash_to_curve(msg: &[u8]) -> ProjectivePoint {
-    <Secp256k1 as GroupDigest>::hash_from_bytes::<ExpandMsgXmd<Sha256>>(&[msg], &[H2C_DST])
-        .expect("ExpandMsgXmd never errors under documented bounds")
+    <Secp256k1 as GroupDigest>::hash_from_bytes::<ExpandMsgXmd<Sha256>>(
+        &[msg],
+        &[H2C_DST],
+    )
+    .expect("ExpandMsgXmd never errors under documented bounds")
 }
 
 /// Build a DLEQ challenge scalar e = H2(X || Gamma || A || B || DLEQ_DST).
@@ -88,10 +93,22 @@ fn dleq_challenge_x(
     a: &ProjectivePoint,
     b: &ProjectivePoint,
 ) -> Scalar {
-    let xb = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(x_point).unwrap();
-    let gb = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(gamma).unwrap();
-    let ab = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(a).unwrap();
-    let bb = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(b).unwrap();
+    let xb =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(
+            x_point,
+        )
+        .unwrap();
+    let gb =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(
+            gamma,
+        )
+        .unwrap();
+    let ab =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(a)
+            .unwrap();
+    let bb =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(b)
+            .unwrap();
 
     let mut input = Vec::with_capacity(4 * 33 + DLEQ_DST.len());
     input.extend_from_slice(&xb);
@@ -105,9 +122,9 @@ fn dleq_challenge_x(
 
 /// Compute Γ = x·H and a DLEQ proof that log_G(X) = log_H(Γ).
 pub fn vrf_gamma_and_proof_for_x(
-    x: &Scalar,                 // witness
-    x_point: &ProjectivePoint,  // X = x·G
-    h_point: &ProjectivePoint,  // H = hash_to_curve(m)
+    x: &Scalar,                // witness
+    x_point: &ProjectivePoint, // X = x·G
+    h_point: &ProjectivePoint, // H = hash_to_curve(m)
 ) -> (ProjectivePoint, DleqProof) {
     // VRF output Γ = x·H
     let gamma = (*h_point) * (*x);
@@ -133,9 +150,9 @@ pub fn vrf_gamma_and_proof_for_x(
 
 /// Verify a DLEQ proof that log_G(X) = log_H(Gamma).
 pub fn vrf_verify_for_x(
-    x_point: &ProjectivePoint,   // X
-    h_point: &ProjectivePoint,   // H
-    gamma: &ProjectivePoint,     // Γ
+    x_point: &ProjectivePoint, // X
+    h_point: &ProjectivePoint, // H
+    gamma: &ProjectivePoint,   // Γ
     proof: &DleqProof,
 ) -> Result<(), VrfError> {
     let a = point_from_bytes(&proof.a_bytes)?;
@@ -172,8 +189,12 @@ pub fn pm_message(
     state_prev: &[u8; 32],
     j: u64,
 ) -> Vec<u8> {
-    // Serialize X with the ciphersuite’s Group serializer (33 bytes, compressed)
-    let x_bytes = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(x_point)
+    // Serialize X with the ciphersuite’s Group serializer (33 bytes,
+    // compressed)
+    let x_bytes =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(
+            x_point,
+        )
         .expect("X encodable");
     let mut msg = Vec::with_capacity(33 + 8 + 32 + chain_id.len() + 8);
     msg.extend_from_slice(b"PMVRF-secp256k1-v1");
@@ -186,7 +207,10 @@ pub fn pm_message(
 
 /// Derive a 32-byte PM key from Γ by hashing its compressed SEC1 encoding.
 pub fn key_from_gamma(gamma: &ProjectivePoint) -> [u8; 32] {
-    let g_bytes = <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(gamma)
+    let g_bytes =
+        <frost::Secp256K1Sha256TR as frost::Ciphersuite>::Group::serialize(
+            gamma,
+        )
         .expect("Gamma encodable");
     let mut h = Sha256::new();
     h.update(b"PMKEY-v1");
@@ -197,7 +221,8 @@ pub fn key_from_gamma(gamma: &ProjectivePoint) -> [u8; 32] {
     key
 }
 
-/// Ratchet the public state deterministically: S_j = H("PMSTATE" || S_{j-1} || key_j).
+/// Ratchet the public state deterministically: S_j = H("PMSTATE" || S_{j-1} ||
+/// key_j).
 pub fn ratchet_state(state_prev: &[u8; 32], key_j: &[u8; 32]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(b"PMSTATE-v1");
@@ -209,9 +234,13 @@ pub fn ratchet_state(state_prev: &[u8; 32], key_j: &[u8; 32]) -> [u8; 32] {
     s
 }
 
-/// Normalize a reconstructed secret scalar so that x*G == X (Taproot even‑Y convention).
-/// If x*G == -X, returns -x. Panics if neither matches (should never happen in these tests).
-pub fn normalize_secret_to_pubkey(mut x: Scalar, x_point: &ProjectivePoint) -> Scalar {
+/// Normalize a reconstructed secret scalar so that x*G == X (Taproot even‑Y
+/// convention). If x*G == -X, returns -x. Panics if neither matches (should
+/// never happen in these tests).
+pub fn normalize_secret_to_pubkey(
+    mut x: Scalar,
+    x_point: &ProjectivePoint,
+) -> Scalar {
     let x_raw_point = ProjectivePoint::GENERATOR * x;
     if x_raw_point == *x_point {
         return x;
