@@ -11,6 +11,7 @@
 
 use core::ops::Add;
 
+use frost::rand_core::OsRng;
 use frost_secp256k1_tr as frost;
 use frost_secp256k1_tr::Group; // for Group::serialize
 use k256::{
@@ -20,7 +21,6 @@ use k256::{
     },
     AffinePoint, EncodedPoint, ProjectivePoint, Scalar, Secp256k1,
 };
-use rand_core::OsRng;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 

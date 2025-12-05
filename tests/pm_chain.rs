@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use frost_secp256k1_tr as frost;
+use frost::rand_core::OsRng;
 use frost_vrf_dleq_secp::{
     hash_to_curve, key_from_gamma, normalize_secret_to_pubkey, pm_message,
     ratchet_state, vrf_gamma_and_proof_for_x, vrf_verify_for_x,
@@ -16,12 +17,12 @@ fn dealer_keygen(
     BTreeMap<frost::Identifier, frost::keys::KeyPackage>,
     frost::keys::PublicKeyPackage,
 ) {
-    let rng = rand::rngs::OsRng;
+    let mut rng = OsRng;
     let (shares, pubkeys) = frost::keys::generate_with_dealer(
         n,
         t,
         frost::keys::IdentifierList::Default,
-        rng,
+        &mut rng,
     )
     .expect("keygen");
     let mut kp = BTreeMap::new();

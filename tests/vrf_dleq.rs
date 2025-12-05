@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use frost::round1;
+use frost::{rand_core::OsRng, round1};
 use frost_secp256k1_tr as frost;
 use frost_vrf_dleq_secp::{
     hash_to_curve, point_bytes, vrf_gamma_and_proof_for_x, vrf_verify_for_x,
@@ -10,7 +10,7 @@ use k256::{ProjectivePoint, Scalar};
 #[test]
 fn vrf_and_dleq_with_group_secret_x() {
     // ----- Keygen (trusted dealer) -----
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = OsRng;
     let max = 5u16;
     let min = 3u16;
 
@@ -18,7 +18,7 @@ fn vrf_and_dleq_with_group_secret_x() {
         max,
         min,
         frost::keys::IdentifierList::Default,
-        rng,
+        &mut rng,
     )
     .expect("keygen ok");
 
