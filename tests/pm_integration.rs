@@ -29,12 +29,12 @@ fn dealer_keygen(
     BTreeMap<frost::Identifier, frost::keys::KeyPackage>,
     frost::keys::PublicKeyPackage,
 ) {
-    let mut rng = OsRng;
+    let rng = OsRng;
     let (shares, pubkeys) = frost::keys::generate_with_dealer(
         n,
         t,
         frost::keys::IdentifierList::Default,
-        &mut rng,
+        rng,
     )
     .expect("keygen");
     let mut kp = BTreeMap::new();
