@@ -9,16 +9,16 @@ description = "VRF + DLEQ demonstration on top of frost-secp256k1-tr (Taproot Sc
 frost-secp256k1-tr = "2.2.0"
 k256 = { version = "0.13.4", features = ["arithmetic", "hash2curve"] }
 sha2 = "0.10"
-rand = "0.8"
-rand_core = "0.6"
+rand = "^0.9.2"
+rand_core = "^0.9.3"
 thiserror = "^2.0"
-provenance-mark = "^0.16.0"
+provenance-mark = "^0.17.0"
 
 [dev-dependencies]
 hex = "0.4"
 nistrs = "0.1.2"
 chrono = "0.4"
-dcbor = "0.23.3"
+dcbor = "^0.24.0"
 
 [lib]
 name = "frost_vrf_dleq_secp"

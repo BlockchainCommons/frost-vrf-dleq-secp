@@ -155,7 +155,7 @@ fn build_chain_with_proof(
             k_next_trunc.clone(),
             chain_id.clone(),
             j as u32,
-            date.clone(),
+            date,
             Option::<dcbor::CBOR>::None, /* keep info application-defined
                                           * for now */
         )
