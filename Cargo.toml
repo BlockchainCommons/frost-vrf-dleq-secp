@@ -10,7 +10,7 @@ frost-secp256k1-tr = "2.2.0"
 k256 = { version = "0.13.4", features = ["arithmetic", "hash2curve"] }
 sha2 = "0.10"
 thiserror = "^2.0"
-provenance-mark = "^0.21.0"
+provenance-mark = "^0.23.0"
 
 [dev-dependencies]
 hex = "0.4"
